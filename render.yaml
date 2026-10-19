@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: allatonce
+    runtime: python
+    repo: https://github.com/QuincyGB/allatonce
+    branch: main
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
