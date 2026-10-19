@@ -136,8 +136,15 @@ def resolve_dish(query: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 def parse_time(value: str) -> int:
-    """'19:00', '7:00 PM', '7pm' -> minutes from midnight."""
-    v = value.strip().lower().replace(" ", "")
+    """'19:00', '7:00 PM', '7pm' -> minutes from midnight.
+
+    Raises ValueError on anything malformed or out of range — callers
+    at the tool boundary turn that into a graceful error reply rather
+    than letting an exception escape (audit fix, 2026-10-19).
+    """
+    v = (value or "").strip().lower().replace(" ", "")
+    if not v:
+        raise ValueError("empty time")
     pm = v.endswith("pm")
     am = v.endswith("am")
     v = v.rstrip("pm").rstrip("am") if (pm or am) else v
@@ -146,11 +153,25 @@ def parse_time(value: str) -> int:
         hour, minute = int(h), int(m)
     else:
         hour, minute = int(v), 0
+    if not (0 <= minute <= 59):
+        raise ValueError(f"bad minutes in {value!r}")
+    if pm or am:
+        if not (1 <= hour <= 12):
+            raise ValueError(f"bad hour in {value!r}")
+    elif not (0 <= hour <= 23):
+        raise ValueError(f"bad hour in {value!r}")
     if pm and hour < 12:
         hour += 12
     if am and hour == 12:
         hour = 0
     return hour * 60 + minute
+
+
+def try_parse_time(value: str) -> int | None:
+    try:
+        return parse_time(value)
+    except (ValueError, AttributeError):
+        return None
 
 
 def fmt(minutes: int) -> str:
@@ -289,6 +310,15 @@ def plan_dinner(dishes: list[str] | None, serve_time: str,
                 cooks: list[str] | None, household_id: str = "") -> dict:
     global SESSION
     household = load_household()
+    if dishes:
+        unknown = [d for d in dishes if not resolve_dish(d)]
+        if unknown:
+            known = ", ".join(r["name"] for r in RECIPES.values())
+            return {"error": (f"I don't have step graphs for: "
+                              f"{', '.join(unknown)}. Dishes I can "
+                              f"conduct: {known}. AllAtOnce is "
+                              "bring-your-own dishes — add a step graph "
+                              "to schedule.py to teach me a new one.")}
     dish_ids = []
     for d in dishes or list(RECIPES):
         rid = resolve_dish(d)
@@ -296,12 +326,23 @@ def plan_dinner(dishes: list[str] | None, serve_time: str,
             dish_ids.append(rid)
     if not dish_ids:
         dish_ids = list(RECIPES)
-    serve_min = parse_time(serve_time)
+    serve_min = try_parse_time(serve_time)
+    if serve_min is None:
+        return {"error": (f"Couldn't understand serve_time "
+                          f"'{serve_time}' — use '19:00' or '7:00 PM'.")}
     schedule = compute_schedule(dish_ids, serve_min, household)
+    assigned = []
+    for dish in schedule["dishes"].values():
+        for step in dish["steps"]:
+            for cook in step["cook"].split(" + "):
+                if cook not in assigned:
+                    assigned.append(cook)
+    requested = cooks or household["members"]
+    session_cooks = [c for c in requested if c in assigned] or assigned
     SESSION = {
         "session_id": "dinner-1",
         "household_id": household_id or household["household_id"],
-        "cooks": cooks or household["members"],
+        "cooks": session_cooks,
         "serve_time": serve_min,
         "projected_serve": serve_min,
         "schedule": schedule,
@@ -316,8 +357,9 @@ def plan_dinner(dishes: list[str] | None, serve_time: str,
     for cook in SESSION["cooks"]:
         brief = _brief_for(SESSION, cook)
         if brief["current"]:
-            first_jobs.append(f"{cook}: {brief['current']['name']} "
-                              f"at {brief['current']['start']}")
+            first_jobs.append(
+                f"{cook}: {brief['current']['name']} "
+                f"at {fmt_spoken(brief['current']['start_min'])}")
     return {
         "session_id": SESSION["session_id"],
         "serve_time": fmt(serve_min),
@@ -356,13 +398,27 @@ def _brief_for(session: dict, cook: str) -> dict:
             out[key] = {"step_id": s["id"], "name": s["name"],
                         "dish": next(d for d, _, st in _all_steps(session)
                                      if st is s),
-                        "start": fmt(s["start"]), "end": fmt(s["end"])}
+                        "start": fmt(s["start"]), "end": fmt(s["end"]),
+                        "start_min": s["start"], "end_min": s["end"]}
     return out
+
+
+def _known_cooks(session: dict) -> list[str]:
+    known = list(session["cooks"])
+    for _, _, s in _all_steps(session):
+        for cook in s["cook"].split(" + "):
+            if cook not in known:
+                known.append(cook)
+    return known
 
 
 def get_cook_brief(cook: str) -> dict:
     if not SESSION:
         return {"error": "No dinner planned yet — call plan_dinner first."}
+    known = _known_cooks(SESSION)
+    if cook not in known:
+        return {"error": (f"Unknown cook '{cook}' — this dinner's cooks "
+                          f"are: {', '.join(known)}.")}
     return _brief_for(SESSION, cook)
 
 
@@ -373,11 +429,13 @@ def complete_step(step_id: str) -> dict:
                  None)
     if not found:
         return {"error": f"Unknown step '{step_id}'."}
-    if step_id not in SESSION["done_steps"]:
+    already = step_id in SESSION["done_steps"]
+    if not already:
         SESSION["done_steps"].append(step_id)
     cook = found["cook"].split(" + ")[0]
     brief = _brief_for(SESSION, cook)
     return {"completed": step_id, "step_name": found["name"],
+            "already_completed": already,
             "cook": cook, "next_job_for_cook": brief["current"],
             "then": brief["next"],
             "steps_remaining": sum(
@@ -391,11 +449,24 @@ def report_delay(dish: str, minutes: int, now: str = "18:30") -> dict:
     dish_id = resolve_dish(dish)
     if not dish_id or dish_id not in SESSION["schedule"]["dishes"]:
         return {"error": f"'{dish}' is not part of this dinner."}
-    SESSION["delay"] = {"dish": dish_id, "minutes": int(minutes),
-                        "now": parse_time(now)}
-    naive = SESSION["serve_time"] + int(minutes)
+    try:
+        mins = int(minutes)
+    except (TypeError, ValueError):
+        return {"error": f"Delay minutes must be a whole number, "
+                         f"got '{minutes}'."}
+    if not (1 <= mins <= 240):
+        return {"error": (f"Delay must be between 1 and 240 minutes, "
+                          f"got {mins}. (Early finishes aren't a delay "
+                          "— just complete the step.)")}
+    now_min = try_parse_time(now)
+    if now_min is None:
+        return {"error": (f"Couldn't understand the time '{now}' — "
+                          "use '18:30' or '6:30 PM'.")}
+    SESSION["delay"] = {"dish": dish_id, "minutes": mins,
+                        "now": now_min, "replanned": False}
+    naive = SESSION["serve_time"] + mins
     return {"dish": dish_id, "dish_name": RECIPES[dish_id]["name"],
-            "delay_minutes": int(minutes),
+            "delay_minutes": mins,
             "reported_at": now,
             "naive_projection": fmt(naive),
             "message": (f"Without a re-plan, dinner slips to "
@@ -412,6 +483,11 @@ def replan_dinner(session_id: str = "") -> dict:
         return {"error": "No dinner planned yet — call plan_dinner first."}
     if not SESSION["delay"]:
         return {"error": "No delay reported — nothing to re-plan."}
+    if SESSION["delay"].get("replanned"):
+        return {"error": ("That delay has already been re-planned — "
+                          "the landing below already includes it. "
+                          "Report a new delay first if something else "
+                          "has slipped.")}
     household = load_household()
     delay = SESSION["delay"]
     delayed_id = delay["dish"]
@@ -439,7 +515,15 @@ def replan_dinner(session_id: str = "") -> dict:
                        f"minutes (trade-off: {rec['trade_off']})."),
             "spoken": "the chicken finishes at high heat"})
     else:
+        old_duration = delayed_step["duration"]
         delayed_step["duration"] += mins
+        changes.append({
+            "dish": delayed_id, "action": "extended",
+            "detail": (f"{dish['name']}: '{delayed_step['name']}' runs "
+                       f"{old_duration} -> {delayed_step['duration']} "
+                       "minutes — this dish has no modelled recovery "
+                       "action, so its slip flows into the landing."),
+            "spoken": None})
     # Compress later steps to their minimums; parallelise where allowed.
     cursor = None
     for step in steps:
@@ -624,6 +708,7 @@ def replan_dinner(session_id: str = "") -> dict:
                            "conflicts": find_conflicts(new_dishes)}
     SESSION["projected_serve"] = projected
     SESSION["changes"] = changes
+    SESSION["delay"]["replanned"] = True
 
     household["last_dinner"] = {
         "planned_serve": fmt(serve0), "projected_serve": fmt(projected),
@@ -668,7 +753,12 @@ def get_dinner_status(session_id: str = "", now: str = "") -> dict:
     if not SESSION:
         return {"error": "No dinner planned yet — call plan_dinner first."}
     household = load_household()
-    now_min = parse_time(now) if now else None
+    now_min = None
+    if now:
+        now_min = try_parse_time(now)
+        if now_min is None:
+            return {"error": (f"Couldn't understand the time '{now}' — "
+                              "use '18:50' or '6:50 PM'.")}
     dishes_out = []
     for dish_id, dish in SESSION["schedule"]["dishes"].items():
         steps_out = []
@@ -704,7 +794,8 @@ def get_dinner_status(session_id: str = "", now: str = "") -> dict:
             "dish": SESSION["delay"]["dish"],
             "minutes": SESSION["delay"]["minutes"]},
         "changes": SESSION["changes"],
-        "cooks": {c: _brief_for(SESSION, c) for c in SESSION["cooks"]},
+        "cooks": {c: _brief_for(SESSION, c)
+                  for c in _known_cooks(SESSION)},
         "dishes": dishes_out,
         "household_facts_used": SESSION["household_facts_used"],
         "household_last_dinner": household.get("last_dinner"),

@@ -42,6 +42,39 @@ Re-plan honesty: a huge delay cannot be absorbed
   [PASS] delay +30 -> honest slip (serve 19:16) 19:16
   [PASS] spoken summary admits the slip 
 
+Robustness: graceful errors, no exceptions (audit 2026-10-19)
+  [PASS] brief before any plan -> error, not a crash 
+  [PASS] complete before any plan -> error 
+  [PASS] delay before any plan -> error 
+  [PASS] replan before any plan -> error 
+  [PASS] status before any plan -> error 
+  [PASS] unknown dish in plan -> error naming the dish 
+  [PASS] malformed serve_time -> error 
+  [PASS] out-of-range serve_time '25:99' -> error 
+  [PASS] unknown cook brief -> error listing cooks 
+  [PASS] unknown step -> error 
+  [PASS] completing a step twice is flagged, not double-counted 
+  [PASS] delay with negative minutes -> error 
+  [PASS] delay with 600 minutes -> error 
+  [PASS] delay with malformed now -> error 
+  [PASS] delay on a dish not in this dinner -> error 
+  [PASS] status with malformed now -> error, not an exception 
+
+Robustness: the double re-plan bug (audit 2026-10-19)
+  [PASS] first re-plan lands 19:01 
+  [PASS] second re-plan of the SAME delay -> error, no double-apply 
+  [PASS] a NEW delay can still be re-planned afterwards 19:03
+
+Robustness: delays on dishes other than the chicken
+  [PASS] beans +10 re-plans without crashing (projected 19:10) 19:10
+  [PASS] the delayed dish itself appears in the change list 
+  [PASS] no cook conflicts after a beans re-plan 
+
+Robustness: plan summary speaks times, cooks fall back
+  [PASS] unknown cook list falls back to the assigned cooks ['Dad']
+  [PASS] alexa_summary uses spoken 12-hour times (no '18:40') Dinner is planned backwards from 8 o'clock. First jobs — Dad: Season and truss the chicken at 6:40. I'll call 
+  [PASS] status cooks include tonight's guest Alex after the re-plan ['Dad', 'Maya', 'Sam', 'Alex']
+
 RESULT: ALL PASS
 
 === END-TO-END MCP TEST (test_client.py over Streamable HTTP) ===
@@ -90,7 +123,7 @@ Turn 1 — 'Alexa, we're four for dinner at seven — roast chicken, garlic mash
     "Maya usually sets the table while the mash holds"
   ],
   "cook_conflicts": [],
-  "alexa_summary": "Dinner is planned backwards from 7 o'clock. First jobs \u2014 Dad: Season and truss the chicken at 17:40; Maya: Peel and chop the potatoes at 18:00; Sam: Trim the beans at 18:41. I'll call each step as we go, and if anything runs late, tell me \u2014 timers don't re-plan dinner when the chicken's late. I do."
+  "alexa_summary": "Dinner is planned backwards from 7 o'clock. First jobs \u2014 Dad: Season and truss the chicken at 5:40; Maya: Peel and chop the potatoes at 6 o'clock; Sam: Trim the beans at 6:41. I'll call each step as we go, and if anything runs late, tell me \u2014 timers don't re-plan dinner when the chicken's late. I do."
 }
   [PASS] serve time 19:00 
   [PASS] chicken starts 17:40 (backward plan) 17:40
@@ -105,14 +138,18 @@ Turn 2 — 'Alexa, what should Maya be doing?'
     "name": "Peel and chop the potatoes",
     "dish": "garlic_mash",
     "start": "18:00",
-    "end": "18:10"
+    "end": "18:10",
+    "start_min": 1080,
+    "end_min": 1090
   },
   "next": {
     "step_id": "mash_boil",
     "name": "Boil the potatoes",
     "dish": "garlic_mash",
     "start": "18:10",
-    "end": "18:30"
+    "end": "18:30",
+    "start_min": 1090,
+    "end_min": 1110
   },
   "remaining": 9
 }
@@ -123,26 +160,31 @@ Turn 3 — Maya checks in as she goes: 'Alexa, the mash is done.'
 {
   "completed": "mash_mash",
   "step_name": "Drain and mash with garlic butter",
+  "already_completed": false,
   "cook": "Maya",
   "next_job_for_cook": {
     "step_id": "mash_hold",
     "name": "Hold covered on low",
     "dish": "garlic_mash",
     "start": "18:40",
-    "end": "18:54"
+    "end": "18:54",
+    "start_min": 1120,
+    "end_min": 1134
   },
   "then": {
     "step_id": "gravy_roux",
     "name": "Make the roux from the pan drippings",
     "dish": "gravy",
     "start": "18:45",
-    "end": "18:50"
+    "end": "18:50",
+    "start_min": 1125,
+    "end_min": 1130
   },
   "steps_remaining": 13
 }
   [PASS] mash marked complete 
-  [PASS] Maya's next job is the mash hold {'step_id': 'mash_hold', 'name': 'Hold covered on low', 'dish': 'garlic_mash', 'start': '18:40', 'end': '18:54'}
-  [PASS] then the gravy at 18:45 {'step_id': 'gravy_roux', 'name': 'Make the roux from the pan drippings', 'dish': 'gravy', 'start': '18:45', 'end': '18:50'}
+  [PASS] Maya's next job is the mash hold {'step_id': 'mash_hold', 'name': 'Hold covered on low', 'dish': 'garlic_mash', 'start': '18:40', 'end': '18:54', 'start_min': 1120, 'end_min': 1134}
+  [PASS] then the gravy at 18:45 {'step_id': 'gravy_roux', 'name': 'Make the roux from the pan drippings', 'dish': 'gravy', 'start': '18:45', 'end': '18:50', 'start_min': 1125, 'end_min': 1130}
 
 Turn 4 — Dad: 'Alexa, the chicken's running fifteen behind.'
 {
@@ -329,14 +371,18 @@ Turn 6 — board state at 18:50, after the re-plan
         "name": "Season and truss the chicken",
         "dish": "roast_chicken",
         "start": "17:40",
-        "end": "17:50"
+        "end": "17:50",
+        "start_min": 1060,
+        "end_min": 1070
       },
       "next": {
         "step_id": "chicken_roast",
         "name": "Roast the chicken",
         "dish": "roast_chicken",
         "start": "17:50",
-        "end": "18:50"
+        "end": "18:50",
+        "start_min": 1070,
+        "end_min": 1130
       },
       "remaining": 6
     },
@@ -347,14 +393,18 @@ Turn 6 — board state at 18:50, after the re-plan
         "name": "Hold covered on low",
         "dish": "garlic_mash",
         "start": "18:40",
-        "end": "18:58"
+        "end": "18:58",
+        "start_min": 1120,
+        "end_min": 1138
       },
       "next": {
         "step_id": "mash_rewhip",
         "name": "Rewhip with a splash of hot milk",
         "dish": "garlic_mash",
         "start": "18:58",
-        "end": "19:01"
+        "end": "19:01",
+        "start_min": 1138,
+        "end_min": 1141
       },
       "remaining": 2
     },
@@ -365,16 +415,34 @@ Turn 6 — board state at 18:50, after the re-plan
         "name": "Trim the beans",
         "dish": "green_beans",
         "start": "18:45",
-        "end": "18:53"
+        "end": "18:53",
+        "start_min": 1125,
+        "end_min": 1133
       },
       "next": {
         "step_id": "beans_pan_saute",
         "name": "Pan-saut\u00e9 the beans in one pan",
         "dish": "green_beans",
         "start": "18:53",
-        "end": "19:01"
+        "end": "19:01",
+        "start_min": 1133,
+        "end_min": 1141
       },
       "remaining": 2
+    },
+    "Alex": {
+      "cook": "Alex",
+      "current": {
+        "step_id": "chicken_carve",
+        "name": "Carve and platter",
+        "dish": "roast_chicken",
+        "start": "18:57",
+        "end": "19:00",
+        "start_min": 1137,
+        "end_min": 1140
+      },
+      "next": null,
+      "remaining": 1
     }
   },
   "dishes": [
@@ -617,9 +685,9 @@ Turn 6 — board state at 18:50, after the re-plan
   [PASS] household memory recorded the landing 
 
 Turn 7 — briefs after the re-plan (chicken is out and resting, so Dad checks in his first two steps)
-Dad: {"cook": "Dad", "current": {"step_id": "chicken_rest", "name": "Rest the chicken", "dish": "roast_chicken", "start": "18:50", "end": "18:57"}, "next": {"step_id": "gravy_roux", "name": "Make the roux from the pan drippings", "dish": "gravy", "start": "18:50", "end": "18:55"}, "remaining": 4}
-Maya: {"cook": "Maya", "current": {"step_id": "mash_hold", "name": "Hold covered on low", "dish": "garlic_mash", "start": "18:40", "end": "18:58"}, "next": {"step_id": "mash_rewhip", "name": "Rewhip with a splash of hot milk", "dish": "garlic_mash", "start": "18:58", "end": "19:01"}, "remaining": 2}
+Dad: {"cook": "Dad", "current": {"step_id": "chicken_rest", "name": "Rest the chicken", "dish": "roast_chicken", "start": "18:50", "end": "18:57", "start_min": 1130, "end_min": 1137}, "next": {"step_id": "gravy_roux", "name": "Make the roux from the pan drippings", "dish": "gravy", "start": "18:50", "end": "18:55", "start_min": 1130, "end_min": 1135}, "remaining": 4}
+Maya: {"cook": "Maya", "current": {"step_id": "mash_hold", "name": "Hold covered on low", "dish": "garlic_mash", "start": "18:40", "end": "18:58", "start_min": 1120, "end_min": 1138}, "next": {"step_id": "mash_rewhip", "name": "Rewhip with a splash of hot milk", "dish": "garlic_mash", "start": "18:58", "end": "19:01", "start_min": 1138, "end_min": 1141}, "remaining": 2}
   [PASS] Dad's queue now includes a gravy step {'gravy_roux', 'chicken_rest'}
-  [PASS] Maya's queue no longer includes the gravy {'mash_hold', 'mash_rewhip'}
+  [PASS] Maya's queue no longer includes the gravy {'mash_rewhip', 'mash_hold'}
 
 RESULT: ALL PASS

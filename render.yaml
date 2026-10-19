@@ -2,7 +2,6 @@ services:
   - type: web
     name: allatonce
     runtime: python
-    repo: https://github.com/QuincyGB/allatonce
     branch: main
     plan: free
     buildCommand: pip install -r requirements.txt

@@ -148,6 +148,92 @@ check("spoken summary admits the slip",
       "couldn't absorb" in r["trade_off_spoken"])
 os.remove(schedule.STATE_PATH)
 
+print("\nRobustness: graceful errors, no exceptions (audit 2026-10-19)")
+schedule.SESSION = None
+check("brief before any plan -> error, not a crash",
+      "error" in schedule.get_cook_brief("Maya"))
+check("complete before any plan -> error",
+      "error" in schedule.complete_step("mash_mash"))
+check("delay before any plan -> error",
+      "error" in schedule.report_delay("roast chicken", 15))
+check("replan before any plan -> error",
+      "error" in schedule.replan_dinner())
+check("status before any plan -> error",
+      "error" in schedule.get_dinner_status())
+fresh_plan()
+check("unknown dish in plan -> error naming the dish",
+      "error" in schedule.plan_dinner(["pizza"], "19:00", ["Dad"]))
+fresh_plan()
+check("malformed serve_time -> error",
+      "error" in schedule.plan_dinner(["roast chicken"], "banana",
+                                      ["Dad"]))
+check("out-of-range serve_time '25:99' -> error",
+      "error" in schedule.plan_dinner(["roast chicken"], "25:99",
+                                      ["Dad"]))
+fresh_plan()
+check("unknown cook brief -> error listing cooks",
+      "error" in schedule.get_cook_brief("Nobody"))
+check("unknown step -> error",
+      "error" in schedule.complete_step("nope_step"))
+r = schedule.complete_step("mash_mash")
+r2 = schedule.complete_step("mash_mash")
+check("completing a step twice is flagged, not double-counted",
+      r2.get("already_completed") is True
+      and schedule.SESSION["done_steps"].count("mash_mash") == 1)
+check("delay with negative minutes -> error",
+      "error" in schedule.report_delay("beans", -10))
+check("delay with 600 minutes -> error",
+      "error" in schedule.report_delay("beans", 600))
+check("delay with malformed now -> error",
+      "error" in schedule.report_delay("beans", 10, now="banana"))
+check("delay on a dish not in this dinner -> error",
+      "error" in schedule.report_delay("pizza", 10))
+check("status with malformed now -> error, not an exception",
+      "error" in schedule.get_dinner_status(now="banana"))
+
+print("\nRobustness: the double re-plan bug (audit 2026-10-19)")
+fresh_plan()
+schedule.report_delay("roast chicken", 15, now="18:30")
+r = schedule.replan_dinner()
+check("first re-plan lands 19:01", r["projected_serve_time"] == "19:01")
+check("second re-plan of the SAME delay -> error, no double-apply",
+      "error" in schedule.replan_dinner()
+      and schedule.SESSION["projected_serve"] == 1141)
+schedule.report_delay("roast chicken", 5, now="18:45")
+r = schedule.replan_dinner()
+check("a NEW delay can still be re-planned afterwards",
+      "projected_serve_time" in r, str(r.get("projected_serve_time")))
+os.remove(schedule.STATE_PATH)
+
+print("\nRobustness: delays on dishes other than the chicken")
+fresh_plan()
+schedule.report_delay("green beans", 10, now="18:30")
+r = schedule.replan_dinner()
+check("beans +10 re-plans without crashing (projected 19:10)",
+      r.get("projected_serve_time") == "19:10",
+      str(r.get("projected_serve_time")))
+check("the delayed dish itself appears in the change list",
+      any(c["dish"] == "green_beans" for c in r.get("changes", [])))
+check("no cook conflicts after a beans re-plan",
+      r.get("cook_conflicts") == [])
+os.remove(schedule.STATE_PATH)
+
+print("\nRobustness: plan summary speaks times, cooks fall back")
+r = schedule.plan_dinner(["roast chicken"], "20:00", ["Alice", "Bob"])
+check("unknown cook list falls back to the assigned cooks",
+      schedule.SESSION["cooks"] == ["Dad"],
+      str(schedule.SESSION["cooks"]))
+check("alexa_summary uses spoken 12-hour times (no '18:40')",
+      "6:40" in r["alexa_summary"] and "18:40" not in r["alexa_summary"],
+      r["alexa_summary"][:110])
+fresh_plan()
+schedule.report_delay("roast chicken", 15, now="18:30")
+schedule.replan_dinner()
+st = schedule.get_dinner_status(now="18:50")
+check("status cooks include tonight's guest Alex after the re-plan",
+      "Alex" in st["cooks"], str(list(st["cooks"])))
+os.remove(schedule.STATE_PATH)
+
 print("\nRESULT:", "ALL PASS" if not failures
       else f"{len(failures)} FAILURES: {failures}")
 sys.exit(0 if not failures else 1)

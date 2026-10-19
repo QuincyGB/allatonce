@@ -10,13 +10,63 @@ badge is exactly the "obvious" pattern the rules contrast against.
 
 **Repo:** https://github.com/QuincyGB/allatonce — PUBLIC, MIT license
 detected by GitHub, anonymous access verified (HTTP 200) 2026-10-19.
-**Live URL:** not deployed yet — Render Blueprint (`render.yaml` is in
-the repo) still needs Quincy to apply it from his Render account:
-Render Dashboard → New → Blueprint → connect `QuincyGB/allatonce` →
-Apply. Expected URL pattern: `https://allatonce.onrender.com`
-(name-dependent; NOT live as of this update — `/health` returned 404).
-No environment variables are needed: the app only reads `$PORT`
-(Render sets it) and an optional state-path override with a default.
+**Live URL:** **[LIVE URL]** — not deployed yet. Render Blueprint
+(`render.yaml` is in the repo) still needs Quincy to apply it from his
+Render account: Render Dashboard → New → Blueprint → connect
+`QuincyGB/allatonce` → Apply. Expected URL pattern:
+`https://allatonce.onrender.com` (name-dependent; NOT live as of this
+update — `/health` returned 404). No environment variables are needed:
+the app only reads `$PORT` (Render sets it) and an optional state-path
+override with a default.
+**Video URL:** **[VIDEO URL]** — to be recorded per DEMO-SCRIPT.md and
+uploaded public to YouTube/Vimeo by Quincy.
+**Project image:** `project-image.png` in the repo root — a screenshot
+of the real Echo Show board after the demo re-plan (projected serve
+19:01, delay banner, 9 computed changes), captured 2026-10-19 with
+headless Chromium against the running server. Devpost asks for a
+project image at filing; use this file.
+**Rules re-verification (audit, 2026-10-19):** the live Devpost page
+and official rules were re-fetched and diffed against this file the
+same day — deadline Fri Oct 23, 2026 12:00 PM PT (= 3:00 PM EDT),
+video < 3 min public YouTube/Vimeo in English, product feedback
+mandatory per tool/API/SDK, repo public with detectable license (or
+private + named reviewers), Alexa+ = MCP spec 2025-11-25+ over
+Streamable HTTP, Open Source mini-challenge fields (contribution URL,
+repo URL, GitHub username, description), project free for judges until
+the judging period ends (Nov 9–20 PT), Ontario eligible (Quebec
+excluded). **No mismatches found.** The rules' AWS-credit request
+form closes Oct 21 but codes were exhausted Oct 7 — irrelevant here,
+no AWS service is used.
+
+---
+
+## Open Source mini-challenge fields (draft)
+
+- **Contribution URL:** https://github.com/QuincyGB/allatonce
+- **Project repository URL:** https://github.com/QuincyGB/allatonce
+- **GitHub username:** QuincyGB
+- **Description:** AllAtOnce is a brand-new open-source project (MIT),
+  created during the hackathon window: a self-hosted MCP server
+  (spec 2025-11-25, Streamable HTTP) that plans a multi-dish,
+  multi-cook dinner backwards from serve time and re-plans the whole
+  landing when a dish runs late. It matters because it is a complete,
+  tested reference for the pattern this track asks for — a *stateful,
+  agentic* MCP workflow (91 automated checks, including honest-slip
+  and robustness suites) rather than a stateless API wrapper — and any
+  developer can clone it, run it in minutes, and adapt the scheduling
+  engine to their own multi-step household workflow.
+
+## Built with
+
+- Python 3.12
+- MCP Python SDK (`mcp[cli]` == 2.3.0, pinned) — MCP spec 2025-11-25,
+  Streamable HTTP transport
+- Starlette (via the SDK's `custom_route` — the board/status/health
+  HTTP routes in `server.py`)
+- Plain HTML/CSS/JS (the Echo Show board, `board.html`)
+- Render free tier (hosting, via the committed `render.yaml`
+  Blueprint) — **[planned; LIVE URL pending Quincy's Blueprint click]**
+- GitHub (public repo, MIT)
 
 ---
 
@@ -63,9 +113,9 @@ absorb, AllAtOnce says so honestly (unit-tested: +30 minutes lands
 board at `/board` on the same app.
 
 **What's real:** the scheduling/re-planning engine is genuine
-constraint recomputation (66 automated checks pass: backward plans,
+constraint recomputation (91 automated checks pass: backward plans,
 dependency shifts, honest slips at +5/+15/+30 minutes, household-memory
-mutation). The recipe data is a small curated step-graph set by design —
+mutation, and a robustness suite for off-script inputs). The recipe data is a small curated step-graph set by design —
 AllAtOnce is bring-your-own dishes; the step graph is the data model.
 The demo's MCP client stands in for the Alexa+ host because no
 entrant-facing Alexa+ test harness was available to verify against.
@@ -112,7 +162,18 @@ entrant-facing Alexa+ test harness was available to verify against.
 - **Would I build again?** Yes — the MCP-first direction is right; the
   missing piece is the test loop, not the model.
 
-### 3. MCP specification / Streamable HTTP transport docs (modelcontextprotocol.io)
+### 3. Starlette (used directly in `server.py` for the HTTP routes)
+- **Used for:** `Request`/`HTMLResponse`/`JSONResponse` behind the
+  SDK's `custom_route` — the Echo Show board (`/board`), its data
+  (`/status`), and `/health`, all on the same app/port as `/mcp`.
+- **What worked:** it disappeared into the SDK's routing; the three
+  routes took a few lines each and the board could poll plain JSON.
+- **What needs work:** nothing hit in this build; the only friction
+  was discovering the pattern (friction log 4, filed under the SDK).
+- **Would I build again?** Yes — for a single-port demo surface next
+  to an MCP endpoint, it's the obvious fit.
+
+### 4. MCP specification / Streamable HTTP transport docs (modelcontextprotocol.io)
 - **Used for:** transport semantics, tool schema shape, session behaviour.
 - **What worked:** the spec is precise; the stateless + JSON-response
   mode is well-defined and our client/server agreed on the first run.
@@ -154,7 +215,9 @@ entrant-facing Alexa+ test harness was available to verify against.
 ## Remaining checklist
 
 - [x] Concept locked by Quincy (AllAtOnce, 2026-10-19)
-- [x] Working MCP server + engine + board, tested end-to-end (66 checks)
+- [x] Working MCP server + engine + board, tested end-to-end (91 checks)
+- [x] End-to-end audit passed (2026-10-19, see AUDIT.md in the repo)
+- [x] Project image created (`project-image.png`, real board screenshot)
 - [x] Demo script written from real server output (DEMO-SCRIPT.md)
 - [ ] Deploy server to Render (free tier) at a public HTTPS URL;
       re-run `test_client.py` against the public URL (`MCP_URL=...`).
@@ -174,3 +237,28 @@ entrant-facing Alexa+ test harness was available to verify against.
 - [ ] "New project" — no pre-existing-project explanation needed
 - [ ] **Quincy: final Submit click** before Fri Oct 23, 2026 3:00 PM EDT
       (file in the morning); screenshot the submitted page
+
+## Exact remaining steps, in order (the moment Render + video exist,
+## the submission can be completed with no further build work)
+
+1. **Quincy:** Render Dashboard → New → Blueprint → connect
+   `QuincyGB/allatonce` → Apply. (No env vars to set.)
+2. **Ren:** verify the live deployment — `GET /health`, run
+   `MCP_URL=[LIVE URL]/mcp python test_client.py` (expect ALL PASS),
+   load `[LIVE URL]/board`; record results in the repo.
+3. **Ren:** record the demo video from DEMO-SCRIPT.md (< 3 min;
+   247 spoken words ≈ 2:34 of speech at the house pacing).
+4. **Quincy:** upload the video, public, to YouTube or Vimeo →
+   **[VIDEO URL]**.
+5. **Ren (draft) / Quincy (logged-in paste):** create the Devpost
+   project: name + one-liner + description (above), repo URL,
+   **[LIVE URL]**, **[VIDEO URL]**, project image
+   (`project-image.png`), built-with list (above).
+6. **Same form:** track = **Alexa+**; mini-challenge = **Open Source**
+   (contribution URL = repo URL = https://github.com/QuincyGB/allatonce,
+   GitHub username = QuincyGB, description from the Open Source fields
+   above); product feedback (all four tools, above); friction log
+   (above); feature request (hosted Alexa+ MCP test harness, marked
+   Important); "existed before the hackathon" = No / new project.
+7. **Quincy: final Submit click** — Fri Oct 23, 2026, file in the
+   morning, hard deadline 3:00 PM EDT. Screenshot the submitted page.

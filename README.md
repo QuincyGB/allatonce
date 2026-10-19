@@ -100,11 +100,16 @@ Test it:
 ```bash
 .venv/bin/python test_schedule.py     # pure-logic engine tests (no server)
 .venv/bin/python test_client.py       # full demo arc over Streamable HTTP
-                                      # (server must be running)
+                                      # (start the server first, in another
+                                      #  terminal; set MCP_URL to test a
+                                      #  deployed instance instead)
 ```
 
-Latest recorded run: **66 checks, ALL PASS** — see
-[test-output.txt](test-output.txt).
+Latest recorded run: **91 checks, ALL PASS** (56 engine/robustness +
+35 end-to-end) — see [test-output.txt](test-output.txt). The robustness
+tests cover judge-style poking: no-plan calls, unknown dishes/cooks/
+steps, malformed times, out-of-range delays, and re-planning the same
+delay twice all return spoken-style errors, never a crash.
 
 ## Layout
 
@@ -115,6 +120,8 @@ household.json   household memory seed (facts the planner reads)
 board.html       the Echo Show board (polls /status)
 test_client.py   end-to-end MCP client driving the full demo arc
 test_schedule.py unit tests for the engine, incl. honest-slip cases
+project-image.png screenshot of the real board after the demo re-plan
+AUDIT.md         end-to-end submission audit (2026-10-19)
 state.json       runtime state (generated; gitignored)
 ```
 
@@ -130,7 +137,12 @@ state.json       runtime state (generated; gitignored)
   server itself is the real thing, speaking spec 2025-11-25.
 - The high-heat recovery is a modelled heuristic (recovers 60% of a
   slip, capped at 9 minutes) — stated in the recipe data, not hidden.
-- One active dinner per server process; household state persists to
+  Recovery *strategies* are authored per dish (the roast-chicken path
+  is the fully modelled one); a delay on another dish still re-solves
+  the timeline and reports an honest projected serve, and says when a
+  slip can't be absorbed.
+- One active dinner per server process — a second `plan_dinner`
+  replaces the active dinner. Household state persists to
   `state.json` on disk.
 
 ## License
