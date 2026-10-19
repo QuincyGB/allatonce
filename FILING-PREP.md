@@ -8,6 +8,16 @@ MIT-licensed, public — matches its required fields). AWS Builder
 mini-challenge: **skip** — no AWS service is used; adding one for the
 badge is exactly the "obvious" pattern the rules contrast against.
 
+**Repo:** https://github.com/QuincyGB/allatonce — PUBLIC, MIT license
+detected by GitHub, anonymous access verified (HTTP 200) 2026-10-19.
+**Live URL:** not deployed yet — Render Blueprint (`render.yaml` is in
+the repo) still needs Quincy to apply it from his Render account:
+Render Dashboard → New → Blueprint → connect `QuincyGB/allatonce` →
+Apply. Expected URL pattern: `https://allatonce.onrender.com`
+(name-dependent; NOT live as of this update — `/health` returned 404).
+No environment variables are needed: the app only reads `$PORT`
+(Render sets it) and an optional state-path override with a default.
+
 ---
 
 ## Project name
@@ -147,10 +157,13 @@ entrant-facing Alexa+ test harness was available to verify against.
 - [x] Working MCP server + engine + board, tested end-to-end (66 checks)
 - [x] Demo script written from real server output (DEMO-SCRIPT.md)
 - [ ] Deploy server to Render (free tier) at a public HTTPS URL;
-      re-run `test_client.py` against the public URL (`MCP_URL=...`)
+      re-run `test_client.py` against the public URL (`MCP_URL=...`).
+      `render.yaml` Blueprint is committed; **Quincy:** apply it in
+      Render (Dashboard → New → Blueprint → `QuincyGB/allatonce`).
 - [ ] Record demo video < 3 min per DEMO-SCRIPT.md; slow pacing
-- [ ] **Quincy:** create the public GitHub repo (his account) and push
-      this folder — MIT LICENSE already in place
+- [x] Public GitHub repo created and pushed (2026-10-19, with Quincy's
+      approval — Ren via `gh`, repo `QuincyGB/allatonce`, MIT LICENSE
+      in place, anonymous HTTP 200 + GitHub license detection verified)
 - [ ] **Quincy:** upload the demo video, public, to YouTube/Vimeo
 - [ ] Paste description + product feedback (above) into the Devpost form
 - [ ] **Track selected: Alexa+** · Mini-challenge: **Open Source**
