@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AllAtOnce — Dinner Board</title>
+<style>
+  :root { --bg:#101418; --panel:#1a2129; --ink:#f2f5f7; --dim:#9fb0bd;
+          --accent:#ffb020; --good:#3ecf6f; --bad:#ff5d5d; --line:#2c3947; }
+  * { box-sizing:border-box; margin:0; font-family: "Amazon Ember", Arial, sans-serif; }
+  body { background:var(--bg); color:var(--ink); padding:28px 34px; }
+  header { display:flex; justify-content:space-between; align-items:baseline;
+           border-bottom:2px solid var(--line); padding-bottom:14px; }
+  h1 { font-size:34px; letter-spacing:.5px; }
+  h1 span { color:var(--accent); }
+  #serve { font-size:26px; color:var(--dim); }
+  #serve b { color:var(--ink); font-size:34px; }
+  #serve .slip { color:var(--bad); font-weight:bold; }
+  #banner { display:none; margin:16px 0 0; padding:12px 16px; border-radius:10px;
+            background:#3a2b12; border:1px solid var(--accent); font-size:19px; }
+  #board { position:relative; margin-top:26px; }
+  .dish { display:grid; grid-template-columns:170px 1fr 92px; gap:14px;
+          align-items:center; margin-bottom:18px; }
+  .dish .name { font-size:21px; font-weight:bold; }
+  .dish .phase { color:var(--dim); font-size:15px; text-transform:uppercase;
+                 letter-spacing:1px; }
+  .dish.delayed .name { color:var(--bad); }
+  .track { position:relative; height:38px; background:var(--panel);
+           border-radius:8px; }
+  .bar { position:absolute; top:5px; height:28px; border-radius:6px;
+         background:var(--good); opacity:.9; }
+  .dish.delayed .bar { background:var(--bad); }
+  .bar.holding { background:var(--accent); }
+  .ready { font-size:19px; text-align:right; color:var(--dim); }
+  .ready b { color:var(--ink); }
+  #serveline { position:absolute; top:-8px; bottom:-8px; width:3px;
+               background:var(--accent); z-index:2; }
+  #serveline::after { content:"SERVE"; position:absolute; top:-24px; left:-22px;
+                      color:var(--accent); font-weight:bold; font-size:15px;
+                      letter-spacing:2px; }
+  #cooks { display:flex; gap:16px; margin-top:30px; flex-wrap:wrap; }
+  .cook { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+          padding:14px 18px; min-width:250px; flex:1; }
+  .cook h3 { font-size:20px; margin-bottom:6px; }
+  .cook .job { font-size:17px; }
+  .cook .then { color:var(--dim); font-size:15px; margin-top:4px; }
+  #changes { margin-top:26px; display:none; }
+  #changes h2 { font-size:20px; color:var(--accent); margin-bottom:8px; }
+  #changes li { font-size:16.5px; color:var(--ink); margin:5px 0 5px 20px; }
+  footer { margin-top:26px; color:var(--dim); font-size:14.5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>All<span>At</span>Once</h1>
+  <div id="serve">Dinner lands <b id="serveTime">—</b> <span id="slip"></span></div>
+</header>
+<div id="banner"></div>
+<div id="board"><div id="serveline"></div><div id="rows"></div></div>
+<div id="cooks"></div>
+<div id="changes"><h2>Re-plan — what changed</h2><ul id="changeList"></ul></div>
+<footer id="facts"></footer>
+
+<script>
+const $ = id => document.getElementById(id);
+async function refresh() {
+  const now = new URLSearchParams(location.search).get("now") || "";
+  const res = await fetch("/status" + (now ? "?now=" + now : ""));
+  const s = await res.json();
+  if (s.error) { $("serveTime").textContent = "no dinner planned"; return; }
+  $("serveTime").textContent = s.projected_serve;
+  const slipMin = Math.round(
+    (parseInt(s.projected_serve) * 60 + parseInt(s.projected_serve.slice(3))) -
+    (parseInt(s.serve_time) * 60 + parseInt(s.serve_time.slice(3))));
+  $("slip").innerHTML = (s.replanned && slipMin > 0)
+    ? `<span class="slip">(${slipMin} min past ${s.serve_time} — re-planned)</span>`
+    : (s.replanned ? "(saved by the re-plan)" : "");
+  if (s.delay) {
+    $("banner").style.display = "block";
+    $("banner").textContent = `⚠ ${s.delay.dish.replace("_"," ")} is running ` +
+      `${s.delay.minutes} minutes behind` + (s.replanned ? " — re-plan applied below." : " — re-planning…");
+  }
+  const w0 = s.window.start_min, w1 = s.window.end_min, span = w1 - w0;
+  const pct = m => ((m - w0) / span * 100);
+  $("rows").innerHTML = s.dishes.map(d => {
+    const holding = d.steps.some(st => st.hold && st.state === "in_progress");
+    const cls = (s.delay && s.delay.dish === d.dish_id) ? "delayed" : "";
+    return `<div class="dish ${cls}">
+      <div><div class="name">${d.name}</div><div class="phase">${d.phase}</div></div>
+      <div class="track"><div class="bar ${holding ? "holding" : ""}"
+        style="left:${pct(d.start_min)}%;width:${pct(d.ready_min) - pct(d.start_min)}%"></div></div>
+      <div class="ready">ready <b>${d.ready}</b></div></div>`;
+  }).join("");
+  // SERVE line sits over the tracks column: offset = label col + gap.
+  const board = $("board"), track = document.querySelector(".track");
+  if (track) {
+    const p = (s.projected_serve.slice(0,2) * 60 + +s.projected_serve.slice(3));
+    const left = track.offsetLeft + track.clientWidth * (p - w0) / span;
+    $("serveline").style.left = left + "px";
+    $("serveline").style.height = board.clientHeight + "px";
+  }
+  $("cooks").innerHTML = Object.values(s.cooks).map(c => `
+    <div class="cook"><h3>${c.cook}</h3>
+      <div class="job">${c.current ? c.current.name + " · " + c.current.start : "All done 🎉"}</div>
+      <div class="then">${c.next ? "then: " + c.next.name + " · " + c.next.start : ""}</div>
+    </div>`).join("");
+  if (s.replanned && s.changes.length) {
+    $("changes").style.display = "block";
+    $("changeList").innerHTML = s.changes.map(c => `<li>${c.detail}</li>`).join("");
+  }
+  $("facts").textContent = "Household memory in play: " +
+    s.household_facts_used.join(" · ");
+}
+refresh(); setInterval(refresh, 5000);
+</script>
+</body>
+</html>
